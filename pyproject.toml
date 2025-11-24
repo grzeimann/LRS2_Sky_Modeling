@@ -17,12 +17,12 @@ dependencies = [
   "matplotlib",
   "photutils",
   "pyyaml",
-  "ppxf",
   "scikit-learn",
 ]
 
 [project.scripts]
-lrs2cube-analyze = "lrs2cube.cli:main"
+lrs2sky = "lrs2sky.cli:main"
+lrs2sky-analyze = "lrs2sky.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

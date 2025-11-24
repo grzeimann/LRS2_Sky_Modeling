@@ -9,7 +9,6 @@ dependencies:
   - astropy
   - matplotlib
   - photutils
-  - ppxf
   - pyyaml
   - pip
   - pip:
