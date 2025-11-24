@@ -1,0 +1,16 @@
+name: lrs2sky
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.10
+  - numpy
+  - scipy
+  - astropy
+  - matplotlib
+  - photutils
+  - ppxf
+  - pyyaml
+  - pip
+  - pip:
+      - -e .

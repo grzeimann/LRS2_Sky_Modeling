@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lrs2sky"
+version = "0.0.1"
+description = "New Sky Modeling Tool for LRS2"
+authors = [{name = "Junie"}]
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "scipy",
+  "astropy",
+  "matplotlib",
+  "photutils",
+  "pyyaml",
+  "ppxf",
+  "scikit-learn",
+]
+
+[project.scripts]
+lrs2cube-analyze = "lrs2cube.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
