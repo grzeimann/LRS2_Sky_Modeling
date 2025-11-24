@@ -18,6 +18,8 @@ dependencies = [
   "photutils",
   "pyyaml",
   "scikit-learn",
+  "pandas",
+  "tables",
 ]
 classifiers = [
   "License :: OSI Approved :: BSD License",
