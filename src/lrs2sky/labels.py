@@ -62,7 +62,7 @@ def compute_labels_from_header(header: Dict[str, Any]) -> Dict[str, float]:
     """Compute metadata labels for a single exposure from its FITS header.
 
     Returns a dict with keys like: airmass, sun_alt, moon_alt, moon_illum,
-    moon_sep, glat, elat, doy_sin, doy_cos, exptime, arm.
+    moon_sep, glat, elat, doy_sin, doy_cos, exptime, arm, transparency.
     Missing quantities are returned as np.nan.
     """
     out: Dict[str, float] = {}
@@ -70,10 +70,14 @@ def compute_labels_from_header(header: Dict[str, Any]) -> Dict[str, float]:
     t = _parse_time(header)
     coord = _parse_radec(header)
 
-    # Exposure time and arm
+    # Exposure time, arm, and transparency (THROUGHP)
     out["exptime"] = float(header.get("EXPTIME", np.nan))
     arm = header.get("INSTRUME") or header.get("DETECTOR") or header.get("ARM")
     out["arm_id"] = {"blue": 0.0, "red": 1.0}.get(str(arm).lower(), np.nan)
+    try:
+        out["transparency"] = float(header.get("THROUGHP", np.nan))
+    except Exception:
+        out["transparency"] = np.nan
 
     if t is None or coord is None:
         # Fill with NaNs if we cannot compute
