@@ -40,3 +40,9 @@ Notes
 - Functions are initial implementations and designed to be extended per skycannon_instructions.md.
 - Label computations use astropy and may require internet-free IERS settings for consistent alt/az; adjust as needed.
 - For a new location (different data root), point ingest to your base folder(s); the tools do not assume a specific mount path.
+
+Installation on older pip
+- If you see an error like "File 'setup.py' or 'setup.cfg' not found... editable mode requires a setuptools-based build" on older pip (e.g., 21.x), we now include setup.cfg/setup.py for compatibility. Two options:
+  1) Upgrade pip: python -m pip install --upgrade pip
+  2) Use the provided setup.cfg by running: pip install -e .
+- The package also supports modern PEP 517 builds via pyproject.toml on newer pip versions.
