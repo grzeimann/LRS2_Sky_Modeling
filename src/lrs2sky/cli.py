@@ -64,6 +64,9 @@ def cmd_labels(args: argparse.Namespace) -> int:
 
 def cmd_spectra(args: argparse.Namespace) -> int:
     df = pd.read_csv(args.index)
+    total = len(df)
+    if getattr(args, "progress", False):
+        print(f"[spectra] Starting extraction for {total} rows from {args.index}")
     exp_paths = []
     flux_list = []
     norms = []
@@ -75,6 +78,8 @@ def cmd_spectra(args: argparse.Namespace) -> int:
         path = row.get("path") or row.get("PATH")
         if not path:
             n_err += 1
+            if getattr(args, "progress", False):
+                print(f"[{i+1}/{total}] MISSING PATH — skipping")
             continue
         # If channel filter specified, validate/infer and skip mismatches
         if used_channel:
@@ -84,10 +89,14 @@ def cmd_spectra(args: argparse.Namespace) -> int:
             except Exception:
                 ch_row = None
             if ch_row and ch_row != used_channel:
+                if getattr(args, "progress", False):
+                    print(f"[{i+1}/{total}] SKIP channel mismatch: inferred={ch_row} requested={used_channel} path={path}")
                 continue
         wave, flux, norm, pb = extract_sky_biweight(path, central_width=args.central_width)
         if wave is None or flux is None:
             n_err += 1
+            if getattr(args, "progress", False):
+                print(f"[{i+1}/{total}] ERROR extracting: path={path}")
             continue
         if wave_ref is None:
             wave_ref = wave
@@ -95,12 +104,18 @@ def cmd_spectra(args: argparse.Namespace) -> int:
             # ensure same wavelength grid length; if mismatch, skip
             if len(wave) != len(wave_ref) or (np.nanmax(np.abs(wave - wave_ref)) > 1e-6):
                 n_err += 1
+                if getattr(args, "progress", False):
+                    print(f"[{i+1}/{total}] WAVEGRID MISMATCH — skipping: path={path} len={len(wave)} ref_len={len(wave_ref)}")
                 continue
         exp_paths.append(path)
         flux_list.append(flux)
         norms.append(norm if norm is not None else np.nan)
         pb = pb or (np.int64(0), np.int64(0))
-        pix_bounds.append((int(pb[0]), int(pb[1])))
+        pb_tuple = (int(pb[0]), int(pb[1]))
+        pix_bounds.append(pb_tuple)
+        if getattr(args, "progress", False):
+            norm_str = f"log10(norm)={norm:.3f}" if norm is not None and np.isfinite(norm) else "norm=nan"
+            print(f"[{i+1}/{total}] OK path={path} {norm_str} window={pb_tuple}")
     if wave_ref is None or not flux_list:
         print("No spectra extracted; aborting.", file=sys.stderr)
         return 2
@@ -136,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_spec.add_argument("--out", required=True, help="Output HDF5 path (*.h5)")
     p_spec.add_argument("--central-width", type=int, default=200, help="Central pixel width for normalization biweight")
     p_spec.add_argument("--channel", choices=["uv","orange","red","farred"], help="Only process exposures matching this channel (validated via header/path)")
+    p_spec.add_argument("--progress", action="store_true", help="Print per-file tracker messages during extraction")
     p_spec.set_defaults(func=cmd_spectra)
 
     return p
