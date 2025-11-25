@@ -157,6 +157,7 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     add_scalar("barompre", "BAROMPRE", "barompre", "barometricpressure", "BAROMETRICPRESSURE", "BAROMETRIC", "PRESSURE")
     add_scalar("winddir", "winddir", "WINDDIR", "WIND_DIR")
     add_scalar("windspd", "windspd", "WINDSPD", "WIND_SPEED", "WINDSPEED")
+    add_scalar("structaz", "structaz", "STRUCTAZ", "STRUCTURE_AZ", "STRUCTUREAZ")
 
     # Time and coordinates
     t = _parse_time_from_row(row)

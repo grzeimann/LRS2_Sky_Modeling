@@ -116,9 +116,9 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
 
     # Read whitespace-delimited with no header (use regex separator for future pandas versions)
     df_raw = pd.read_csv(list_path, sep=r"\s+", engine="python", header=None, comment="#", dtype=str)
-    # Expect 16 columns; if more due to spaces in OBJECT, collapse adjacent columns
+    # Expect 17 columns; if more due to spaces in OBJECT, collapse adjacent columns
     # Heuristic: first column is path, last two are RA, DEC, and the two before are exptime, airmass
-    if df_raw.shape[1] < 16:
+    if df_raw.shape[1] < 17:
         raise ValueError(f"Unexpected column count ({df_raw.shape[1]}) in {list_path}; expected >= 8.")
 
     # Build columns robustly
@@ -140,6 +140,7 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
     baropre_col = df_raw.iloc[:, 13]
     winddir_col = df_raw.iloc[:, 14]
     windspd_col = df_raw.iloc[:, 15]
+    structaz_col = df_raw.iloc[:, 16]
 
     out = pd.DataFrame()
     # Standardize paths relative to the list file location
@@ -173,6 +174,8 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
     out["barometricpressure"] = baropre_col.apply(to_float)
     out["winddir"] = winddir_col.apply(to_float)
     out["windspeed"] = windspd_col.apply(to_float)
+    out["structaz"] = structaz_col.apply(to_float)
+
 
     # filter to requested channel
     mask = [c == ch for c in out["channel"].tolist()]
