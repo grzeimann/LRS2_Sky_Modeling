@@ -129,31 +129,34 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     - ra, dec (or OBJRA/OBJDEC)
     - exptime (optional)
     - transparency or THROUGHP (optional)
+    - environmental scalars (optional): AMBTEMP, HUMIDITY, DEWPOINT, BAROMPRE, WINDDIR, WINDSPD
 
     Returns a dict with keys: airmass, sun_alt, moon_alt, moon_illum,
-    moon_sep, glat, elat, doy_sin, doy_cos, exptime, transparency.
+    moon_sep, glat, elat, doy_sin, doy_cos, exptime, transparency, millum,
+    ambtemp, humidity, dewpoint, barompre, winddir, windspd.
     Missing quantities are returned as np.nan.
     """
     out: Dict[str, float] = {}
 
+    # Helper to pull a scalar from the row and coerce to float
+    def add_scalar(out_key: str, *candidates: str) -> None:
+        val = _get_case_insensitive(row, *candidates)
+        try:
+            out[out_key] = float(val) if val is not None else np.nan
+        except Exception:
+            out[out_key] = np.nan
+
     # Scalars
-    exptime = _get_case_insensitive(row, "exptime", "EXPTIME")
-    try:
-        out["exptime"] = float(exptime) if exptime is not None else np.nan
-    except Exception:
-        out["exptime"] = np.nan
-
-    transp = _get_case_insensitive(row, "transparency", "THROUGHP")
-    try:
-        out["transparency"] = float(transp) if transp is not None else np.nan
-    except Exception:
-        out["transparency"] = np.nan
-
-    millum = _get_case_insensitive(row, "millum", "MILLUM")
-    try:
-        out["millum"] = float(millum) if millum is not None else np.nan
-    except Exception:
-        out["millum"] = np.nan
+    add_scalar("exptime", "exptime", "EXPTIME")
+    add_scalar("transparency", "transparency", "THROUGHP")
+    add_scalar("millum", "millum", "MILLUM")
+    # New ingested environmental parameters
+    add_scalar("ambtemp", "ambtemp", "AMBTEMP", "AMBIENT_T", "AMBIENTTEMP")
+    add_scalar("humidity", "humidity", "HUMIDITY", "humidty", "HUMID")
+    add_scalar("dewpoint", "dewpoint", "DEWPOINT")
+    add_scalar("barompre", "BAROMPRE", "barompre", "barometricpressure", "BAROMETRICPRESSURE", "BAROMETRIC", "PRESSURE")
+    add_scalar("winddir", "winddir", "WINDDIR", "WIND_DIR")
+    add_scalar("windspd", "windspd", "WINDSPD", "WIND_SPEED", "WINDSPEED")
 
     # Time and coordinates
     t = _parse_time_from_row(row)

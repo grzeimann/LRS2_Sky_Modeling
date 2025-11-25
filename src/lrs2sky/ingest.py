@@ -31,6 +31,12 @@ RECOMMENDED_MASTER_KEYS = [
     "DEC",
     "THROUGHP",
     "MILLUM",
+    "AMBTEMP",
+    "HUMIDITY",
+    "DEWPOINT",
+    "BAROMPRE",
+    "WINDDIR",
+    "WINDSPD",
 ]
 
 def infer_channel(hdr: Optional[fits.Header] = None, path: Optional[str] = None) -> Optional[str]:
@@ -110,24 +116,30 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
 
     # Read whitespace-delimited with no header (use regex separator for future pandas versions)
     df_raw = pd.read_csv(list_path, sep=r"\s+", engine="python", header=None, comment="#", dtype=str)
-    # Expect 10 columns; if more due to spaces in OBJECT, collapse adjacent columns
+    # Expect 16 columns; if more due to spaces in OBJECT, collapse adjacent columns
     # Heuristic: first column is path, last two are RA, DEC, and the two before are exptime, airmass
-    if df_raw.shape[1] < 10:
+    if df_raw.shape[1] < 16:
         raise ValueError(f"Unexpected column count ({df_raw.shape[1]}) in {list_path}; expected >= 8.")
 
     # Build columns robustly
     # Combine middle columns into single object name if more than 8 total
     ncol = df_raw.shape[1]
     path_col = df_raw.iloc[:, 0]
-    obj_parts = df_raw.iloc[:, ncol - 9]
-    date_col = df_raw.iloc[:, ncol - 8]
-    time_col = df_raw.iloc[:, ncol - 7]
-    exptime_col = df_raw.iloc[:, ncol - 6]
-    airmass_col = df_raw.iloc[:, ncol - 5]
-    ra_col = df_raw.iloc[:, ncol - 4]
-    dec_col = df_raw.iloc[:, ncol - 3]
-    trans_col = df_raw.iloc[:, ncol - 2]
-    millum_col = df_raw.iloc[:, ncol - 1]
+    obj_parts = df_raw.iloc[:, 1]
+    date_col = df_raw.iloc[:, 2]
+    time_col = df_raw.iloc[:, 3]
+    exptime_col = df_raw.iloc[:, 4]
+    airmass_col = df_raw.iloc[:, 5]
+    ra_col = df_raw.iloc[:, 6]
+    dec_col = df_raw.iloc[:, 7]
+    trans_col = df_raw.iloc[:, 8]
+    millum_col = df_raw.iloc[:, 9]
+    ambtemp_col = df_raw.iloc[:, 10]
+    humidty_col = df_raw.iloc[:, 11]
+    dewpoint_col = df_raw.iloc[:, 12]
+    baropre_col = df_raw.iloc[:, 13]
+    winddir_col = df_raw.iloc[:, 14]
+    windspd_col = df_raw.iloc[:, 15]
 
     out = pd.DataFrame()
     # Standardize paths relative to the list file location
@@ -155,6 +167,13 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
     out["channel"] = [rc if rc in CHANNELS else None for rc in rows_ch]
     out["transparency"] = trans_col.apply(to_float)
     out["millum"] = millum_col.apply(to_float)
+    out["ambtemp"] = ambtemp_col.apply(to_float)
+    out["humidty"] = humidty_col.apply(to_float)
+    out["dewpoint"] = dewpoint_col.apply(to_float)
+    out["barometricpressure"] = baropre_col.apply(to_float)
+    out["winddir"] = winddir_col.apply(to_float)
+    out["windspeed"] = windspd_col.apply(to_float)
+
     # filter to requested channel
     mask = [c == ch for c in out["channel"].tolist()]
     out = out.loc[mask].reset_index(drop=True)
