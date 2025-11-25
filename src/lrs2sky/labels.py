@@ -149,6 +149,12 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     except Exception:
         out["transparency"] = np.nan
 
+    millum = _get_case_insensitive(row, "millum", "MILLUM")
+    try:
+        out["millum"] = float(millum) if millum is not None else np.nan
+    except Exception:
+        out["millum"] = np.nan
+
     # Time and coordinates
     t = _parse_time_from_row(row)
     coord = _parse_radec_from_row(row)

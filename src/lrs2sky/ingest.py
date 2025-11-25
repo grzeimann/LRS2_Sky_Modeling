@@ -29,7 +29,8 @@ RECOMMENDED_MASTER_KEYS = [
     "AIRMASS",
     "RA",
     "DEC",
-    "THROUGHP"
+    "THROUGHP",
+    "MILLUM",
 ]
 
 def infer_channel(hdr: Optional[fits.Header] = None, path: Optional[str] = None) -> Optional[str]:
@@ -109,23 +110,24 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
 
     # Read whitespace-delimited with no header (use regex separator for future pandas versions)
     df_raw = pd.read_csv(list_path, sep=r"\s+", engine="python", header=None, comment="#", dtype=str)
-    # Expect 9 columns; if more due to spaces in OBJECT, collapse adjacent columns
+    # Expect 10 columns; if more due to spaces in OBJECT, collapse adjacent columns
     # Heuristic: first column is path, last two are RA, DEC, and the two before are exptime, airmass
-    if df_raw.shape[1] < 9:
+    if df_raw.shape[1] < 10:
         raise ValueError(f"Unexpected column count ({df_raw.shape[1]}) in {list_path}; expected >= 8.")
 
     # Build columns robustly
     # Combine middle columns into single object name if more than 8 total
     ncol = df_raw.shape[1]
     path_col = df_raw.iloc[:, 0]
-    obj_parts = df_raw.iloc[:, ncol - 8]
-    date_col = df_raw.iloc[:, ncol - 7]
-    time_col = df_raw.iloc[:, ncol - 6]
-    exptime_col = df_raw.iloc[:, ncol - 5]
-    airmass_col = df_raw.iloc[:, ncol - 4]
-    ra_col = df_raw.iloc[:, ncol - 3]
-    dec_col = df_raw.iloc[:, ncol - 2]
-    trans_col = df_raw.iloc[:, ncol - 1]
+    obj_parts = df_raw.iloc[:, ncol - 9]
+    date_col = df_raw.iloc[:, ncol - 8]
+    time_col = df_raw.iloc[:, ncol - 7]
+    exptime_col = df_raw.iloc[:, ncol - 6]
+    airmass_col = df_raw.iloc[:, ncol - 5]
+    ra_col = df_raw.iloc[:, ncol - 4]
+    dec_col = df_raw.iloc[:, ncol - 3]
+    trans_col = df_raw.iloc[:, ncol - 2]
+    millum_col = df_raw.iloc[:, ncol - 1]
 
     out = pd.DataFrame()
     # Standardize paths relative to the list file location
@@ -152,6 +154,7 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
     rows_ch = [infer_channel(None, p) for p in out["path"].tolist()]
     out["channel"] = [rc if rc in CHANNELS else None for rc in rows_ch]
     out["transparency"] = trans_col.apply(to_float)
+    out["millum"] = millum_col.apply(to_float)
     # filter to requested channel
     mask = [c == ch for c in out["channel"].tolist()]
     out = out.loc[mask].reset_index(drop=True)
