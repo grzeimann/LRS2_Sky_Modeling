@@ -220,9 +220,14 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
 
     try:
         if (moon_icrs is not None) and ('sun_icrs' in locals()) and (sun_icrs is not None):
-            phase_angle = sun_icrs.separation(moon_icrs).to(u.rad).value
-            illum = (1 + np.cos(phase_angle)) / 2
-            out["moon_illum"] = float(illum)
+            # Use geocentric Sun–Moon elongation ψ (in radians) and convert to
+            # illuminated fraction k = (1 - cos ψ) / 2.
+            # Note: Full Moon -> ψ≈π -> k≈1; New Moon -> ψ≈0 -> k≈0.
+            psi = sun_icrs.separation(moon_icrs).to(u.rad).value
+            illum = 0.5 * (1.0 - np.cos(psi))
+            # numerical safety
+            illum = float(np.clip(illum, 0.0, 1.0))
+            out["moon_illum"] = illum
         else:
             out["moon_illum"] = np.nan
     except Exception:
