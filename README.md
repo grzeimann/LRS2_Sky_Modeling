@@ -4,8 +4,8 @@ Minimal, modular tools to build a Cannon-style forward model of the night-sky sp
 
 Quick start
 - Create a conda environment and install in editable mode.
-- Ingest FITS files into a CSV index.
-- Prototype label extraction and modeling.
+- Ingest a channel-specific list into a CSV index.
+- Compute labels from the CSV and prototype modeling.
 
 Environment
 1. conda env create -f environment.yml
@@ -17,31 +17,33 @@ Notes on Python versions
 
 CLI usage
 - lrs2sky version
-- lrs2sky ingest /data/root --date 20220101 --ndays 90 --channel orange --csv-out index_orange.csv
-- lrs2sky labels index_orange.csv --out labels_orange.parquet
-- lrs2sky spectra index_orange.csv --channel orange --out spectra_orange.h5 --central-width 200
+- lrs2sky ingest --channel orange --csv-out index/index_orange.csv
+  (reads archive/orange_file_list.txt by default; use --archive-dir or --list-path to override)
+- lrs2sky labels index/index_orange.csv --out label/label_orange.parquet
+- lrs2sky spectra index/index_orange.csv --channel orange --out spectra/spectra_orange.h5 --central-width 200
 
-Channel selection
+Ingest (channel list based)
 - Channels supported: uv, orange, red, farred.
-- Ingest: pass --channel to limit file discovery and to embed an inferred channel column in the CSV. Pattern supports {date} and {channel}.
-- Spectra: pass --channel to only process exposures from that channel and to ensure a consistent wavelength grid.
+- The ingest command loads a prebuilt whitespace-delimited list file from the archive:
+  archive/<channel>_file_list.txt
+  Each row is expected to have: path  object  date  time  exptime  airmass  RA  DEC  THROUGHP
+- Output CSV schema (columns): path, object, exptime, dateobs, ra, dec, channel, transparency.
+- You can point to a custom list file with --list-path, or change the directory via --archive-dir.
 
 What gets labeled
-- Derived labels: Sun/Moon geometry, moon illumination, gal/ecl latitudes, day-of-year encodings
-- Sky spectra: biweight coadd across all 280 fibers from HDU[0] at each wavelength; wavelength taken from HDU[6].data[0].
-- Normalization: biweight of the central 200 pixels (configurable via --central-width); the scalar and pixel bounds are saved.
-- Output format: HDF5 written with PyTables: datasets wave (n_wave), flux (n_exp,n_wave), norm (n_exp), pix_bounds (n_exp,2), and exp_path (VLArray of UTF-8 strings).
+- The labels command reads the index CSV (no FITS I/O) and computes per-exposure metadata:
+  Sun/Moon geometry, moon illumination, galactic/ecliptic latitudes, day-of-year encodings, airmass.
 
 Python usage
-- from lrs2sky.ingest import find_sky_files
-- from lrs2sky.labels import compute_labels_from_header
-- from lrs2sky.spectrum import extract_sky_biweight, load_spectra_hdf5
+- from lrs2sky.ingest import load_channel_index
+- from lrs2sky.labels import compute_labels_from_row
+- from lrs2sky.spectrum import extract_sky_biweight, load_spectra_hdf5, save_spectra_hdf5
 - from lrs2sky.model import fit_basis, fit_coeff_models, predict_coeffs, reconstruct_spectrum
 
 Notes
-- Functions are initial implementations and designed to be extended per skycannon_instructions.md.
+- Functions are initial implementations and designed to be extended per skycannon_plan.md.
 - Label computations use astropy and may require internet-free IERS settings for consistent alt/az; adjust as needed.
-- For a new location (different data root), point ingest to your base folder(s); the tools do not assume a specific mount path.
+- Ingest no longer scans directories; it reads channel list files under archive/ and filters to the requested channel.
 
 Installation on older pip
 - If you see an error like "File 'setup.py' or 'setup.cfg' not found... editable mode requires a setuptools-based build" on older pip (e.g., 21.x), we now include setup.cfg/setup.py for compatibility. Two options:
