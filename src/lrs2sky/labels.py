@@ -66,6 +66,11 @@ def _parse_time_from_row(row: pd.Series) -> Optional[Time]:
         # If value looks like "YYYY-MM-DD HH:MM:SS" convert to ISO "T"
         if " " in val and "T" not in val:
             val = val.replace(" ", "T", 1)
+        # Normalize a leading '+' in the time component (e.g., 'YYYY-MM-DDT+HH:MM:SS')
+        if "T" in val:
+            d, tpart = val.split("T", 1)
+            tpart = tpart.lstrip("+")
+            val = f"{d}T{tpart}"
         try:
             return Time(val, format="isot", scale="utc")
         except Exception:
@@ -77,7 +82,8 @@ def _parse_time_from_row(row: pd.Series) -> Optional[Time]:
     date = _get_case_insensitive(row, "date", "DATE")
     time = _get_case_insensitive(row, "time", "TIME")
     if date is not None and time is not None:
-        val = f"{str(date).strip()}T{str(time).strip()}"
+        tstr = str(time).strip().lstrip("+")
+        val = f"{str(date).strip()}T{tstr}"
         try:
             return Time(val, format="isot", scale="utc")
         except Exception:
@@ -266,7 +272,7 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
             secz = 1.0 / np.cos(z_rad)
             out["moon_airmass"] = float(secz)
         else:
-            out["moon_airmass"] = np.nan
+            out["moon_airmass"] = 100.00
     except Exception:
         out["moon_airmass"] = np.nan
 
@@ -279,6 +285,7 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
         k = out.get("k_ext", np.nan)
         if not np.isfinite(k):
             k = 0.15  # default atmospheric extinction coefficient
+            out["k_ext"] = k
         m_air = out.get("moon_airmass", np.nan)
         trans_term = float(np.exp(-k * float(m_air))) if np.isfinite(k) and np.isfinite(m_air) else np.nan
         if np.isfinite(illum) and np.isfinite(alt_term) and np.isfinite(trans_term) and np.isfinite(sep_term):
