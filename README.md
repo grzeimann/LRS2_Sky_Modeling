@@ -12,6 +12,9 @@ Environment
 2. conda activate lrs2sky
 3. pip install -e .
 
+Notes on Python versions
+- Supports Python 3.9 and newer. If you are on a legacy system with Python 3.9, the included setup.cfg enables editable installs with older pip versions.
+
 CLI usage
 - lrs2sky version
 - lrs2sky ingest /data/root --date 20220101 --ndays 90 --channel orange --csv-out index_orange.csv
