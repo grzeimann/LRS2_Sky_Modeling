@@ -130,10 +130,12 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     - exptime (optional)
     - transparency or THROUGHP (optional)
     - environmental scalars (optional): AMBTEMP, HUMIDITY, DEWPOINT, BAROMPRE, WINDDIR, WINDSPD
+    - optional extinction coefficient for KSfeature: k, k_ext, extinction
 
     Returns a dict with keys: airmass, sun_alt, moon_alt, moon_illum,
-    moon_sep, glat, elat, doy_sin, doy_cos, exptime, transparency, millum,
-    ambtemp, humidity, dewpoint, barompre, winddir, windspd.
+    moon_sep, moon_airmass, KSfeature, glat, elat, doy_sin, doy_cos,
+    exptime, transparency, millum, ambtemp, humidity, dewpoint, barompre,
+    winddir, windspd.
     Missing quantities are returned as np.nan.
     """
     out: Dict[str, float] = {}
@@ -150,6 +152,8 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     add_scalar("exptime", "exptime", "EXPTIME")
     add_scalar("transparency", "transparency", "THROUGHP")
     add_scalar("millum", "millum", "MILLUM")
+    # Optional extinction coefficient (defaults applied later if NaN)
+    add_scalar("k_ext", "k", "k_ext", "extinction", "EXTINCTION")
     # New ingested environmental parameters
     add_scalar("ambtemp", "ambtemp", "AMBTEMP", "AMBIENT_T", "AMBIENTTEMP")
     add_scalar("humidity", "humidity", "HUMIDITY", "humidty", "HUMID")
@@ -171,6 +175,8 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
             "moon_alt",
             "moon_illum",
             "moon_sep",
+            "moon_airmass",
+            "KSfeature",
             "glat",
             "elat",
             "doy_sin",
@@ -190,6 +196,8 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     # Suppress extremely noisy NonRotationTransformationWarning unless debug is enabled
     sun_alt = np.nan
     moon_alt = np.nan
+    sun_obj = None
+    moon_obj = None
     moon_icrs = None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", NonRotationTransformationWarning)
@@ -197,14 +205,18 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
             sun = _compat_get_sun(t)
             sun_alt = (sun.transform_to(AltAz(obstime=t, location=HET_LOCATION)).alt.to(u.deg).value)
             sun_icrs = sun.icrs
+            sun_obj = sun
         except Exception:
             sun_icrs = None
+            sun_obj = None
         try:
             moon = _compat_get_moon(t, location=HET_LOCATION)
             moon_alt = (moon.transform_to(AltAz(obstime=t, location=HET_LOCATION)).alt.deg)
             moon_icrs = moon.icrs
+            moon_obj = moon
         except Exception:
             moon_icrs = None
+            moon_obj = None
     out["sun_alt"] = sun_alt
     out["moon_alt"] = moon_alt
 
@@ -220,18 +232,61 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
 
     try:
         if (moon_icrs is not None) and ('sun_icrs' in locals()) and (sun_icrs is not None):
-            # Use geocentric Sun–Moon elongation ψ (in radians) and convert to
-            # illuminated fraction k = (1 - cos ψ) / 2.
-            # Note: Full Moon -> ψ≈π -> k≈1; New Moon -> ψ≈0 -> k≈0.
+            # Prefer the physical lunar phase angle i at the Moon using distances
+            # (per USNO/AA and astropy cookbook):
+            #   i = atan2( r_sun * sin(ψ), r_moon - r_sun * cos(ψ) )
+            # where ψ is the geocentric Sun–Moon elongation and r_sun, r_moon are
+            # observer distances to Sun and Moon. Illuminated fraction:
+            #   k = (1 + cos i) / 2.
+            # This reduces to k ≈ (1 - cos ψ)/2 when r_sun >> r_moon (common approximation).
             psi = sun_icrs.separation(moon_icrs).to(u.rad).value
-            illum = 0.5 * (1.0 - np.cos(psi))
-            # numerical safety
+            illum = None
+            try:
+                # Use distances if available; coerce to same units and strip Quantity
+                r_sun = float(getattr(sun_obj, 'distance').to(u.AU).value)  # type: ignore[name-defined]
+                r_moon = float(getattr(moon_obj, 'distance').to(u.AU).value)  # type: ignore[name-defined]
+                num = r_sun * np.sin(psi)
+                den = (r_moon - r_sun * np.cos(psi))
+                i = float(np.arctan2(num, den))
+                illum = 0.5 * (1.0 + np.cos(i))
+            except Exception:
+                # Fallback to geocentric elongation approximation
+                illum = 0.5 * (1.0 - np.cos(psi))
             illum = float(np.clip(illum, 0.0, 1.0))
             out["moon_illum"] = illum
         else:
             out["moon_illum"] = np.nan
     except Exception:
         out["moon_illum"] = np.nan
+
+    # Moon airmass from moon altitude (only when above horizon)
+    try:
+        if np.isfinite(moon_alt) and (moon_alt > 0) and (moon_alt < 89.999):
+            z_rad = np.radians(90.0 - float(moon_alt))
+            secz = 1.0 / np.cos(z_rad)
+            out["moon_airmass"] = float(secz)
+        else:
+            out["moon_airmass"] = np.nan
+    except Exception:
+        out["moon_airmass"] = np.nan
+
+    # KSfeature (L_moon) per provided formula
+    try:
+        illum = out.get("moon_illum", np.nan)
+        alt_term = float(np.clip(np.sin(np.radians(moon_alt)), 0.0, None)) if np.isfinite(moon_alt) else np.nan
+        sep = out.get("moon_sep", np.nan)
+        sep_term = 1.0 / (1.0 + (float(sep) / 25.0) ** 2) if np.isfinite(sep) else np.nan
+        k = out.get("k_ext", np.nan)
+        if not np.isfinite(k):
+            k = 0.15  # default atmospheric extinction coefficient
+        m_air = out.get("moon_airmass", np.nan)
+        trans_term = float(np.exp(-k * float(m_air))) if np.isfinite(k) and np.isfinite(m_air) else np.nan
+        if np.isfinite(illum) and np.isfinite(alt_term) and np.isfinite(trans_term) and np.isfinite(sep_term):
+            out["KSfeature"] = float(illum) * alt_term * trans_term * sep_term
+        else:
+            out["KSfeature"] = np.nan
+    except Exception:
+        out["KSfeature"] = np.nan
 
     # Galactic and ecliptic latitude
     try:
