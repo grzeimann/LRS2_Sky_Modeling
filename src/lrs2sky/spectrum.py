@@ -71,7 +71,7 @@ def extract_sky_biweight(
                 sky_norm = sky / norm
             else:
                 sky_norm = sky
-            return wave, sky_norm, norm, (i0, i1)
+            return wave, sky_norm, np.log10(norm), (i0, i1)
     except Exception:
         return None, None, None, None
 
