@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import glob
-import os
 import os.path as op
-from datetime import datetime, timedelta
-from typing import Iterable, List, Tuple, Optional
+from typing import Iterable, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -12,12 +9,28 @@ from astropy.io import fits
 
 
 __all__ = [
-    "find_sky_files",
     "infer_channel",
+    "load_channel_index",
+    "RECOMMENDED_MASTER_KEYS",
 ]
 
 
 CHANNELS = ("uv", "orange", "red", "farred")
+
+# Recommended header keywords to include in a master index file. These are common
+# and broadly useful for filtering and analysis. The index should at minimum
+# contain a 'path' column with the absolute path to the FITS exposure.
+RECOMMENDED_MASTER_KEYS = [
+    "PATH",
+    "OBJECT",
+    "DATE",
+    "TIME",
+    "EXPTIME",
+    "AIRMASS",
+    "RA",
+    "DEC",
+    "THROUGHP"
+]
 
 def infer_channel(hdr: Optional[fits.Header] = None, path: Optional[str] = None) -> Optional[str]:
     """Infer LRS2 channel string ('uv','orange','red','farred') from header or file path.
@@ -48,106 +61,99 @@ def infer_channel(hdr: Optional[fits.Header] = None, path: Optional[str] = None)
     return None
 
 
-def _iter_dates(center_date: str, ndays: int) -> List[str]:
-    d0 = datetime(int(center_date[:4]), int(center_date[4:6]), int(center_date[6:]))
-    start = d0 - timedelta(days=int(ndays // 2))
-    return [
-        (start + timedelta(days=int(i))).strftime("%Y%m%d")
-        for i in range(int(ndays))
-    ]
+def _standardize_paths(paths: Iterable[str], base_dir: str) -> List[str]:
+    out = []
+    for p in paths:
+        if p is None or (isinstance(p, float) and np.isnan(p)):
+            out.append(None)
+            continue
+        s = str(p)
+        if not s:
+            out.append(None)
+            continue
+        if not op.isabs(s):
+            s = op.abspath(op.join(base_dir, s))
+        out.append(s)
+    return out
 
 
-def _is_sky_exposure(hdr: fits.Header, min_exptime: float) -> bool:
-    exptime = float(hdr.get("EXPTIME", 0.0))
-    if exptime < min_exptime:
-        return False
-    obj = (hdr.get("OBJECT") or "").lower()
-    # Heuristic: OBJECT contains "sky" or target slot matches typical SKY slot
-    if "sky" in obj:
-        return True
-    # Optional slot heuristic
-    try:
-        slot = obj.split("_")[-2]
-        if slot == "066":
-            return True
-    except Exception:
-        pass
-    # Fallback: not identified as sky
-    return False
+def load_channel_index(channel: str, archive_dir: str = "archive", path: Optional[str] = None) -> pd.DataFrame:
+    """Load a prebuilt exposure list for a given LRS2 channel from the archive.
 
+    The archive text files are expected to be whitespace-delimited with no
+    header line and per-row fields:
+      path  object  date  time  exptime  airmass  ra  dec
 
-def find_sky_files(
-    folders: Iterable[str],
-    pattern: str = "multi*{date}*{channel}.fits",
-    date: str = "20220101",
-    ndays: int = 365,
-    min_exptime: float = 300.0,
-    csv_out: Optional[str] = None,
-    channel: Optional[str] = None,
-) -> pd.DataFrame:
-    """Search recursively for LRS2 FITS sky exposures and return a table.
+    - The 'channel' is inferred from the filename (must match requested channel)
+      or from the provided 'channel' argument.
+    - The output DataFrame schema is canonical across the package with columns:
+      path, object, exptime, dateobs, ra, dec, arm, channel
 
     Parameters
     ----------
-    folders : iterable of str
-        Base folders to search in (non-recursive glob on pattern per date).
-    pattern : str
-        Filename pattern containing the substring '{date}'.
-    date : str
-        Center date (YYYYMMDD) for the date range.
-    ndays : int
-        Number of days to span around center date.
-    min_exptime : float
-        Minimum exposure time in seconds.
-    csv_out : str, optional
-        If provided, write the resulting table to this CSV path.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Table with columns: path, object, exptime, dateobs, ra, dec, arm, channel
+    channel : str
+        One of {uv, orange, red, farred}.
+    archive_dir : str, default 'archive'
+        Directory containing '<channel>_file_list.txt'.
+    path : str, optional
+        Override path to a specific list file. If provided, 'channel' is used
+        only for validation/filtering.
     """
-    records = []
-    dates = _iter_dates(date, ndays)
-    # normalize channel string if provided
-    ch = str(channel).lower() if channel else None
-    if ch and ch not in CHANNELS:
+    ch = str(channel).lower()
+    if ch not in CHANNELS:
         raise ValueError(f"Unknown channel '{channel}'. Expected one of {CHANNELS}.")
-    for folder in folders:
-        for d in dates:
-            pat = pattern.format(date=d, channel=(ch or "*"))
-            for path in sorted(glob.glob(op.join(folder, pat))):
-                try:
-                    with fits.open(path) as hdul:
-                        hdr = hdul[0].header
-                except Exception:
-                    continue
-                if not _is_sky_exposure(hdr, min_exptime=min_exptime):
-                    continue
-                obj = hdr.get("OBJECT", "")
-                exptime = float(hdr.get("EXPTIME", np.nan))
-                dateobs = hdr.get("DATE-OBS") or hdr.get("DATE", "")
-                ra = hdr.get("RA") or hdr.get("OBJRA")
-                dec = hdr.get("DEC") or hdr.get("OBJDEC")
-                arm = hdr.get("INSTRUME") or hdr.get("DETECTOR") or ""
-                ch_infer = infer_channel(hdr, path)
-                # Skip mismatched channel if user requested specific channel
-                if ch and ch_infer and ch_infer != ch:
-                    continue
-                records.append(
-                    dict(
-                        path=op.abspath(path),
-                        object=obj,
-                        exptime=exptime,
-                        dateobs=dateobs,
-                        ra=ra,
-                        dec=dec,
-                        arm=arm,
-                        channel=ch_infer,
-                    )
-                )
-    df = pd.DataFrame.from_records(records)
-    if csv_out:
-        os.makedirs(op.dirname(op.abspath(csv_out)) or ".", exist_ok=True)
-        df.to_csv(csv_out, index=False)
-    return df
+
+    list_path = path or op.join(archive_dir, f"{ch}_file_list.txt")
+    if not op.exists(list_path):
+        raise FileNotFoundError(f"List file not found: {list_path}")
+
+    # Read whitespace-delimited with no header (use regex separator for future pandas versions)
+    df_raw = pd.read_csv(list_path, sep=r"\s+", engine="python", header=None, comment="#", dtype=str)
+    # Expect 9 columns; if more due to spaces in OBJECT, collapse adjacent columns
+    # Heuristic: first column is path, last two are RA, DEC, and the two before are exptime, airmass
+    if df_raw.shape[1] < 9:
+        raise ValueError(f"Unexpected column count ({df_raw.shape[1]}) in {list_path}; expected >= 8.")
+
+    # Build columns robustly
+    # Combine middle columns into single object name if more than 8 total
+    ncol = df_raw.shape[1]
+    path_col = df_raw.iloc[:, 0]
+    obj_parts = df_raw.iloc[:, ncol - 8]
+    date_col = df_raw.iloc[:, ncol - 7]
+    time_col = df_raw.iloc[:, ncol - 6]
+    exptime_col = df_raw.iloc[:, ncol - 5]
+    airmass_col = df_raw.iloc[:, ncol - 4]
+    ra_col = df_raw.iloc[:, ncol - 3]
+    dec_col = df_raw.iloc[:, ncol - 2]
+    trans_col = df_raw.iloc[:, ncol - 1]
+
+    out = pd.DataFrame()
+    # Standardize paths relative to the list file location
+    base_dir = op.dirname(op.abspath(list_path))
+    out["path"] = _standardize_paths(path_col.tolist(), base_dir)
+    out["object"] = obj_parts.str.strip()
+
+    # exptime as float where possible
+    def to_float(x):
+        try:
+            return float(str(x))
+        except Exception:
+            return np.nan
+
+    out["exptime"] = exptime_col.apply(to_float)
+
+    # dateobs combine
+    out["dateobs"] = (date_col.astype(str).str.strip() + "T" + time_col.astype(str).str.strip())
+
+    out["ra"] = ra_col.astype(str).str.strip()
+    out["dec"] = dec_col.astype(str).str.strip()
+
+    # determine channel per row using path; enforce match with requested channel
+    rows_ch = [infer_channel(None, p) for p in out["path"].tolist()]
+    out["channel"] = [rc if rc in CHANNELS else None for rc in rows_ch]
+    out["transparency"] = trans_col.apply(to_float)
+    # filter to requested channel
+    mask = [c == ch for c in out["channel"].tolist()]
+    out = out.loc[mask].reset_index(drop=True)
+
+    return out

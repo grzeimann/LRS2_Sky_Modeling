@@ -25,10 +25,9 @@ Channel selection
 - Channels supported: uv, orange, red, farred.
 - Ingest: pass --channel to limit file discovery and to embed an inferred channel column in the CSV. Pattern supports {date} and {channel}.
 - Spectra: pass --channel to only process exposures from that channel and to ensure a consistent wavelength grid.
-- Channel is inferred from FITS header (CHANNEL/ARM/INSTRUME/DETECTOR) or from the filename.
 
-What gets extracted
-- Header labels: airmass, Sun/Moon geometry, gal/ecl latitudes, day-of-year encodings, exposure time, arm id, and transparency via THROUGHP.
+What gets labeled
+- Derived labels: Sun/Moon geometry, moon illumination, gal/ecl latitudes, day-of-year encodings
 - Sky spectra: biweight coadd across all 280 fibers from HDU[0] at each wavelength; wavelength taken from HDU[6].data[0].
 - Normalization: biweight of the central 200 pixels (configurable via --central-width); the scalar and pixel bounds are saved.
 - Output format: HDF5 written with PyTables: datasets wave (n_wave), flux (n_exp,n_wave), norm (n_exp), pix_bounds (n_exp,2), and exp_path (VLArray of UTF-8 strings).
