@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy.coordinates import BarycentricTrueEcliptic
-from astropy.coordinates.baseframe import NonRotationTransformationWarning
+try:
+    from astropy.coordinates.baseframe import NonRotationTransformationWarning  # type: ignore
+except Exception:  # pragma: no cover - compatibility for older astropy
+    class NonRotationTransformationWarning(Warning):
+        pass
 # Compatibility wrappers for solar/lunar positions across Astropy versions
 try:  # Astropy with direct get_sun/get_moon
     from astropy.coordinates import get_moon as _get_moon, get_sun as _get_sun
