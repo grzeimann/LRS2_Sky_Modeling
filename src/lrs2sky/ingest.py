@@ -24,7 +24,6 @@ RECOMMENDED_MASTER_KEYS = [
     "PATH",
     "OBJECT",
     "DATE",
-    "TIME",
     "EXPTIME",
     "AIRMASS",
     "RA",
@@ -116,9 +115,9 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
 
     # Read whitespace-delimited with no header (use regex separator for future pandas versions)
     df_raw = pd.read_csv(list_path, sep=r"\s+", engine="python", header=None, comment="#", dtype=str)
-    # Expect 17 columns; if more due to spaces in OBJECT, collapse adjacent columns
+    # Expect 16 columns; if more due to spaces in OBJECT, collapse adjacent columns
     # Heuristic: first column is path, last two are RA, DEC, and the two before are exptime, airmass
-    if df_raw.shape[1] < 17:
+    if df_raw.shape[1] < 16:
         raise ValueError(f"Unexpected column count ({df_raw.shape[1]}) in {list_path}; expected >= 8.")
 
     # Build columns robustly
@@ -127,20 +126,19 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
     path_col = df_raw.iloc[:, 0]
     obj_parts = df_raw.iloc[:, 1]
     date_col = df_raw.iloc[:, 2]
-    time_col = df_raw.iloc[:, 3]
-    exptime_col = df_raw.iloc[:, 4]
-    airmass_col = df_raw.iloc[:, 5]
-    ra_col = df_raw.iloc[:, 6]
-    dec_col = df_raw.iloc[:, 7]
-    trans_col = df_raw.iloc[:, 8]
-    millum_col = df_raw.iloc[:, 9]
-    ambtemp_col = df_raw.iloc[:, 10]
-    humidty_col = df_raw.iloc[:, 11]
-    dewpoint_col = df_raw.iloc[:, 12]
-    baropre_col = df_raw.iloc[:, 13]
-    winddir_col = df_raw.iloc[:, 14]
-    windspd_col = df_raw.iloc[:, 15]
-    structaz_col = df_raw.iloc[:, 16]
+    exptime_col = df_raw.iloc[:, 3]
+    airmass_col = df_raw.iloc[:, 4]
+    ra_col = df_raw.iloc[:, 5]
+    dec_col = df_raw.iloc[:, 6]
+    trans_col = df_raw.iloc[:, 7]
+    millum_col = df_raw.iloc[:, 8]
+    ambtemp_col = df_raw.iloc[:, 9]
+    humidty_col = df_raw.iloc[:, 10]
+    dewpoint_col = df_raw.iloc[:, 11]
+    baropre_col = df_raw.iloc[:, 12]
+    winddir_col = df_raw.iloc[:, 13]
+    windspd_col = df_raw.iloc[:, 14]
+    structaz_col = df_raw.iloc[:, 15]
 
     out = pd.DataFrame()
     # Standardize paths relative to the list file location
@@ -158,7 +156,7 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
     out["exptime"] = exptime_col.apply(to_float)
 
     # dateobs combine
-    out["dateobs"] = (date_col.astype(str).str.strip() + "T" + time_col.astype(str).str.strip())
+    out["dateobs"] = date_col.astype(str).str.strip()
 
     out["ra"] = ra_col.astype(str).str.strip()
     out["dec"] = dec_col.astype(str).str.strip()
@@ -167,6 +165,7 @@ def load_channel_index(channel: str, archive_dir: str = "archive", path: Optiona
     rows_ch = [infer_channel(None, p) for p in out["path"].tolist()]
     out["channel"] = [rc if rc in CHANNELS else None for rc in rows_ch]
     out["transparency"] = trans_col.apply(to_float)
+    out["airmass"] = airmass_col.apply(to_float)
     out["millum"] = millum_col.apply(to_float)
     out["ambtemp"] = ambtemp_col.apply(to_float)
     out["humidty"] = humidty_col.apply(to_float)
