@@ -158,6 +158,8 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     add_scalar("exptime", "exptime", "EXPTIME")
     add_scalar("transparency", "transparency", "THROUGHP")
     add_scalar("millum", "millum", "MILLUM")
+    add_scalar("airmass", "airmass", "AIRMASS", "AIR_MASS", "air_mass")
+
     # Optional extinction coefficient (defaults applied later if NaN)
     add_scalar("k_ext", "k", "k_ext", "extinction", "EXTINCTION")
     # New ingested environmental parameters
@@ -176,7 +178,6 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     if t is None or coord is None:
         # Fill with NaNs if we cannot compute
         for k in [
-            "airmass",
             "sun_alt",
             "moon_alt",
             "moon_illum",
@@ -194,7 +195,13 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     # Airmass at HET
     try:
         altaz = coord.transform_to(AltAz(obstime=t, location=HET_LOCATION))
-        out["airmass"] = _airmass(altaz)
+        airmass = _airmass(altaz)
+        prev_airmass = out.get("airmass", np.nan)
+        if (airmass is not None) and np.isfinite(prev_airmass) and np.isfinite(airmass):
+            airmass_difference = float(np.abs(airmass - prev_airmass))
+            if airmass_difference > 0.1:
+                print(f"Header airmass {prev_airmass:.2f}, Date-Obs airmass {airmass:.2f}, airmass difference {airmass_difference:.2f}")
+        out["airmass"] = airmass if airmass is not None else np.nan
     except Exception:
         out["airmass"] = np.nan
 
