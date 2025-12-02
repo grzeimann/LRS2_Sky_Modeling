@@ -24,15 +24,6 @@ except Exception:  # Fallback to generic body getter
         return _get_body("moon", t, location=location)
     def _compat_get_sun(t):
         return _get_body("sun", t)
-# Prefer built-in Moon illumination when available for correctness across versions
-try:
-    from astropy.coordinates import moon_illumination as _moon_illumination  # type: ignore
-except Exception:
-    try:
-        from astropy.coordinates.moon import moon_illumination as _moon_illumination  # type: ignore
-    except Exception:
-        _moon_illumination = None  # type: ignore
-
 from astropy.time import Time
 import astropy.units as u
 import warnings
@@ -132,54 +123,6 @@ def _airmass(altaz) -> Optional[float]:
         secz = 1.0 / np.cos((90 * u.deg - altaz.alt).to(u.rad))
         # secz is a dimensionless Quantity in recent Astropy; use .value
         return secz.value
-    except Exception:
-        return None
-
-
-def _compute_moon_illumination(
-    t: Time,
-    location: EarthLocation,
-    sun_icrs,
-    moon_icrs,
-    sun_obj,
-    moon_obj,
-) -> Optional[float]:
-    """Return fraction of lunar disk illuminated in [0,1].
-
-    Preference order:
-    1) astropy.coordinates.moon_illumination (version-dependent location handling)
-    2) Phase-angle formula using distances: k = (1 + cos i)/2, with
-       i = atan2(r_sun*sin ψ, r_moon - r_sun*cos ψ)
-    3) Geocentric elongation approximation: k ≈ (1 - cos ψ)/2
-    """
-    # 1) Built-in if available
-    try:
-        if _moon_illumination is not None:
-            # Some versions accept only Time; others accept (Time, location)
-            try:
-                k = _moon_illumination(t, location=location)  # type: ignore[arg-type]
-            except Exception:
-                k = _moon_illumination(t)  # type: ignore[misc]
-            return float(np.clip(float(k), 0.0, 1.0))
-    except Exception:
-        pass
-    # Require sun/moon positions for fallbacks
-    if sun_icrs is None or moon_icrs is None:
-        return None
-    try:
-        psi = sun_icrs.separation(moon_icrs).to(u.rad).value
-        # 2) Phase-angle with distances if available
-        try:
-            r_sun = float(getattr(sun_obj, 'distance').to(u.AU).value)
-            r_moon = float(getattr(moon_obj, 'distance').to(u.AU).value)
-            num = r_sun * np.sin(psi)
-            den = (r_moon - r_sun * np.cos(psi))
-            i = float(np.arctan2(num, den))
-            k = 0.5 * (1.0 + np.cos(i))
-        except Exception:
-            # 3) Geocentric elongation approximation
-            k = 0.5 * (1.0 - np.cos(psi))
-        return float(np.clip(k, 0.0, 1.0))
     except Exception:
         return None
 
@@ -301,8 +244,31 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
         out["moon_sep"] = np.nan
 
     try:
-        k = _compute_moon_illumination(t, HET_LOCATION, sun_icrs, moon_icrs, sun_obj, moon_obj)
-        out["moon_illum"] = float(k) if k is not None and np.isfinite(k) else np.nan
+        if (moon_icrs is not None) and ('sun_icrs' in locals()) and (sun_icrs is not None):
+            # Prefer the physical lunar phase angle i at the Moon using distances
+            # (per USNO/AA and astropy cookbook):
+            #   i = atan2( r_sun * sin(ψ), r_moon - r_sun * cos(ψ) )
+            # where ψ is the geocentric Sun–Moon elongation and r_sun, r_moon are
+            # observer distances to Sun and Moon. Illuminated fraction:
+            #   k = (1 + cos i) / 2.
+            # This reduces to k ≈ (1 - cos ψ)/2 when r_sun >> r_moon (common approximation).
+            psi = sun_icrs.separation(moon_icrs).to(u.rad).value
+            illum = None
+            try:
+                # Use distances if available; coerce to same units and strip Quantity
+                r_sun = float(getattr(sun_obj, 'distance').to(u.AU).value)  # type: ignore[name-defined]
+                r_moon = float(getattr(moon_obj, 'distance').to(u.AU).value)  # type: ignore[name-defined]
+                num = r_sun * np.sin(psi)
+                den = (r_moon - r_sun * np.cos(psi))
+                i = float(np.arctan2(num, den))
+                illum = 0.5 * (1.0 + np.cos(i))
+            except Exception:
+                # Fallback to geocentric elongation approximation
+                illum = 0.5 * (1.0 - np.cos(psi))
+            illum = float(np.clip(illum, 0.0, 1.0))
+            out["moon_illum"] = illum
+        else:
+            out["moon_illum"] = np.nan
     except Exception:
         out["moon_illum"] = np.nan
 
