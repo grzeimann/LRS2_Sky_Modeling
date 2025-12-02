@@ -286,9 +286,10 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
 
     # KS91 moonlight brightness proxy (Krisciunas & Schaefer 1991)
     # This is a dimensionless proxy proportional to the scattered moonlight surface brightness.
-    # It follows the structure: F(alpha) * 10^{-0.4 k X_m} * (1 - 10^{-0.4 k X}) * f(rho),
+    # It follows the structure: F(alpha) * 10^{-0.4 k X_m} * (1 - 10^{-0.4 k X}) * f(rho) * transparency,
     # where F(alpha) is the lunar phase function (eq. 21), X and X_m are sky and Moon airmasses,
-    # and f(rho) is the scattering function (small/large-angle piecewise).
+    # f(rho) is the scattering function (small/large-angle piecewise), and an optional multiplicative
+    # transparency factor (0..1) scales the result when provided in the input CSV.
     try:
         alpha_deg = np.nan
         # Use Sun–Moon geocentric elongation for phase angle alpha (deg) as in KS91.
@@ -323,6 +324,12 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
             # an extra transmission term 10^{-0.4 k X_sky}. We make it optional by including it only
             # when X_sky is modest (<= 5) to avoid numerical blow-up; comment out if undesired.
             ks91 *= float(10.0 ** (-0.4 * k_ext * min(max(X_sky, 0.0), 10.0)))
+            # Incorporate measured transparency (0..1+) as a multiplicative factor when available.
+            t_fac = out.get("transparency", np.nan)
+            if np.isfinite(t_fac):
+                # Clip to a reasonable range [0, 1.2] to avoid pathological inputs
+                t_fac = float(np.clip(t_fac, 0.0, 1.2))
+                ks91 *= t_fac
             out["KSfeature"] = ks91
         else:
             out["KSfeature"] = np.nan
