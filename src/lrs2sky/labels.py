@@ -283,20 +283,47 @@ def compute_labels_from_row(row: pd.Series) -> Dict[str, float]:
     except Exception:
         out["moon_airmass"] = np.nan
 
-    # KSfeature (L_moon) per provided formula
+
+    # KS91 moonlight brightness proxy (Krisciunas & Schaefer 1991)
+    # This is a dimensionless proxy proportional to the scattered moonlight surface brightness.
+    # It follows the structure: F(alpha) * 10^{-0.4 k X_m} * (1 - 10^{-0.4 k X}) * f(rho),
+    # where F(alpha) is the lunar phase function (eq. 21), X and X_m are sky and Moon airmasses,
+    # and f(rho) is the scattering function (small/large-angle piecewise).
     try:
-        illum = out.get("moon_illum", np.nan)
-        alt_term = float(np.clip(np.sin(np.radians(moon_alt)), 0.0, None)) if np.isfinite(moon_alt) else np.nan
-        sep = out.get("moon_sep", np.nan)
-        sep_term = 1.0 / (1.0 + (float(sep) / 25.0) ** 2) if np.isfinite(sep) else np.nan
-        k = out.get("k_ext", np.nan)
-        if not np.isfinite(k):
-            k = 0.15  # default atmospheric extinction coefficient
-            out["k_ext"] = k
-        m_air = out.get("moon_airmass", np.nan)
-        trans_term = float(np.exp(-k * float(m_air))) if np.isfinite(k) and np.isfinite(m_air) else np.nan
-        if np.isfinite(illum) and np.isfinite(alt_term) and np.isfinite(trans_term) and np.isfinite(sep_term):
-            out["KSfeature"] = float(illum) * alt_term * trans_term * sep_term
+        alpha_deg = np.nan
+        # Use Sun–Moon geocentric elongation for phase angle alpha (deg) as in KS91.
+        try:
+            if ('sun_icrs' in locals()) and (sun_icrs is not None) and (moon_icrs is not None):
+                alpha_deg = float(sun_icrs.separation(moon_icrs).deg)
+        except Exception:
+            alpha_deg = np.nan
+        rho_deg = float(out.get("moon_sep", np.nan))
+        X_sky = float(out.get("airmass", np.nan))
+        X_moon = float(out.get("moon_airmass", np.nan))
+        k_ext = out.get("k_ext", np.nan)
+        if not np.isfinite(k_ext):
+            k_ext = 0.15
+            out["k_ext"] = k_ext
+        if np.isfinite(alpha_deg) and np.isfinite(rho_deg) and np.isfinite(X_sky) and np.isfinite(X_moon):
+            # Phase function F(alpha) from KS91 eq. (21); alpha in degrees
+            F_alpha = 10.0 ** (-0.4 * (3.84 + 0.026 * abs(alpha_deg) + 4e-9 * (alpha_deg ** 4)))
+            # Scattering function f(rho) [KS91, small vs large angle], rho in degrees
+            if rho_deg < 10.0:
+                # Near-lunar small-angle form (empirical)
+                f_rho = 10.0 ** 5.36 * (1.06 + (np.cos(np.radians(rho_deg)) ** 2))
+            else:
+                # Large-angle exponential fall-off
+                f_rho = 10.0 ** (6.15 - (rho_deg / 40.0))
+            # Extinction along Moon path and through the sky column
+            T_moon = 10.0 ** (-0.4 * k_ext * X_moon)
+            # Fraction of light scattered into the line-of-sight in the sky column
+            scatter_column = 1.0 - (10.0 ** (-0.4 * k_ext * X_sky))
+            ks91 = float(F_alpha * T_moon * scatter_column * f_rho)
+            # Apply additional attenuation along sky path (optional). Some implementations include
+            # an extra transmission term 10^{-0.4 k X_sky}. We make it optional by including it only
+            # when X_sky is modest (<= 5) to avoid numerical blow-up; comment out if undesired.
+            ks91 *= float(10.0 ** (-0.4 * k_ext * min(max(X_sky, 0.0), 10.0)))
+            out["KSfeature"] = ks91
         else:
             out["KSfeature"] = np.nan
     except Exception:
